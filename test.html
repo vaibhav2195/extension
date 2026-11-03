@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Tracking Test Page</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; background: #111; color: #eee; }
+    .card { background: #222; border: 1px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .status { font-weight: bold; }
+    .status.active { color: #4ade80; }
+    .status.hidden { color: #f87171; }
+    .log { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 120px; overflow-y: auto; color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <h1>Visibility & Focus API Detection Tester</h1>
+
+  <div class="card">
+    <h3>1. Page Visibility API</h3>
+    <p>document.hidden: <span id="hiddenState" class="status">unknown</span></p>
+    <p>document.visibilityState: <span id="visState" class="status">unknown</span></p>
+  </div>
+
+  <div class="card">
+    <h3>2. Window Focus State</h3>
+    <p>document.hasFocus(): <span id="focusState" class="status">unknown</span></p>
+  </div>
+
+  <div class="card">
+    <h3>3. Fullscreen API</h3>
+    <p>document.fullscreenElement: <span id="fullscreenState" class="status">none</span></p>
+    <button onclick="document.documentElement.requestFullscreen().then(() => log('requestFullscreen resolved')).catch(e => log('requestFullscreen failed: ' + e))" style="padding: 6px 12px; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer;">Request Fullscreen</button>
+    <button onclick="document.exitFullscreen().then(() => log('exitFullscreen resolved')).catch(e => log('exitFullscreen failed: ' + e))" style="padding: 6px 12px; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">Exit Fullscreen</button>
+  </div>
+
+  <div class="card">
+    <h3>4. Paste Restricted Test Area</h3>
+    <textarea id="pasteBox" placeholder="Paste test box (simulates paste restriction)..." style="width: 100%; height: 60px; background: #111; color: #fff; border: 1px solid #555; padding: 8px; border-radius: 4px; box-sizing: border-box;"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="card">
+      <h3>5. Extension Disabler & Scanner Tester</h3>
+      <p>Test sending messages matching the proctoring disabler protocol:</p>
+      <button onclick="testDisablerMessage('getEnabledCount')" style="padding: 6px 12px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer;">Send getEnabledCount</button>
+      <button onclick="testDisablerMessage('disable')" style="padding: 6px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">Send disable</button>
+      <button onclick="testDisablerMessage('enable')" style="padding: 6px 12px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">Send enable</button>
+      <div id="disablerResult" style="margin-top: 10px; font-family: monospace; font-size: 12px; color: #a7f3d0;"></div>
+    </div>
+
+    <div class="card">
+      <h3>6. PrintScreen & Screenshot Keydown Tester</h3>
+      <p>Simulate or press PrintScreen / PrtScn / Win+Shift+S. When PrintScreen spoofing is enabled, keydown events will be intercepted and neutralized from page listeners:</p>
+      <button onclick="simulatePrintScreen()" style="padding: 6px 12px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer;">Simulate PrintScreen Keydown</button>
+      <div id="printScreenStatus" style="margin-top: 10px; font-family: monospace; font-size: 12px; color: #fbbf24;">Status: Waiting for keydown event...</div>
+    </div>
+
+    <div class="card">
+      <h3>7. localStorage Cross-Tab Write Event Tester</h3>
+      <p>Write to localStorage to trigger a cross-tab <code>storage</code> event. Open this page in 2 tabs to test cross-tab blocking!</p>
+      <button onclick="triggerStorageWrite()" style="padding: 6px 12px; background: #ea580c; color: white; border: none; border-radius: 4px; cursor: pointer;">Trigger localStorage setItem</button>
+      <div id="storageStatus" style="margin-top: 10px; font-family: monospace; font-size: 12px; color: #fdba74;">Status: Listening for storage events...</div>
+    </div>
+
+    <div class="card">
+      <h3>8. BroadcastChannel API Tester</h3>
+      <p>Send messages on <code>BroadcastChannel('proctor_test')</code>. When isolated, cross-tab broadcasts will not leak to other tabs.</p>
+      <button onclick="testBroadcastChannel()" style="padding: 6px 12px; background: #0891b2; color: white; border: none; border-radius: 4px; cursor: pointer;">Send BroadcastChannel Message</button>
+      <div id="bcStatus" style="margin-top: 10px; font-family: monospace; font-size: 12px; color: #67e8f9;">Status: BroadcastChannel ready.</div>
+    </div>
+
+    <div class="card">
+      <h3>9. SharedWorker Multi-Tab Spoof Tester</h3>
+      <p>Connect to SharedWorker and query tab count. When spoofed, tab count will always return 1 and multi-tab warnings are suppressed.</p>
+      <button onclick="testSharedWorker()" style="padding: 6px 12px; background: #9333ea; color: white; border: none; border-radius: 4px; cursor: pointer;">Query SharedWorker Tab Count</button>
+      <div id="swStatus" style="margin-top: 10px; font-family: monospace; font-size: 12px; color: #e9d5ff;">Status: SharedWorker ready.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Event Log</h3>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    const log = (msg) => {
+      const logDiv = document.getElementById('log');
+      logDiv.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    };
+
+    function updateStats() {
+      document.getElementById('hiddenState').textContent = document.hidden;
+      document.getElementById('visState').textContent = document.visibilityState;
+      document.getElementById('focusState').textContent = document.hasFocus();
+      document.getElementById('fullscreenState').textContent = document.fullscreenElement ? 'ACTIVE' : 'NONE';
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      log(`visibilitychange event fired! hidden=${document.hidden}, state=${document.visibilityState}`);
+      updateStats();
+    });
+
+    window.addEventListener('blur', () => {
+      log('window blur event fired!');
+      updateStats();
+    });
+
+    window.addEventListener('focus', () => {
+      log('window focus event fired!');
+      updateStats();
+    });
+
+    document.addEventListener('mouseleave', (e) => {
+      if (!e.relatedTarget) {
+        log('mouseleave event fired (cursor left window boundary)!');
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      log(`keydown: Key=${e.key}, Code=${e.code}, KeyCode=${e.keyCode}, Ctrl=${e.ctrlKey}, Alt=${e.altKey}`);
+      if (e.key === 'PrintScreen' || e.code === 'PrintScreen' || e.keyCode === 44) {
+        const psStatus = document.getElementById('printScreenStatus');
+        if (psStatus) psStatus.textContent = 'DETECTED: PrintScreen keydown received by page listener!';
+      }
+    });
+
+    function simulatePrintScreen() {
+      log('Dispatching synthetic PrintScreen keydown event...');
+      const evt = new KeyboardEvent('keydown', {
+        key: 'PrintScreen',
+        code: 'PrintScreen',
+        keyCode: 44,
+        which: 44,
+        bubbles: true,
+        cancelable: true
+      });
+      document.dispatchEvent(evt);
+    }
+
+    const pasteBox = document.getElementById('pasteBox');
+    if (pasteBox) {
+      pasteBox.addEventListener('paste', (e) => {
+        log('Page paste event triggered on pasteBox!');
+        // Simulates webpage trying to block paste
+        // e.preventDefault();
+      });
+    }
+
+    function testDisablerMessage(type) {
+      const resDiv = document.getElementById('disablerResult');
+      resDiv.textContent = 'Sending message...';
+      const msgObj = { message: type, data: ['test-ext-id'] };
+      if (window.chrome && window.chrome.runtime && window.chrome.runtime.sendMessage) {
+        window.chrome.runtime.sendMessage(msgObj, (res) => {
+          log(`Disabler test response for [${type}]: ${JSON.stringify(res)}`);
+          resDiv.textContent = `Response: ${JSON.stringify(res, null, 2)}`;
+        });
+      } else {
+        log('chrome.runtime.sendMessage not available');
+        resDiv.textContent = 'chrome.runtime.sendMessage unavailable';
+      }
+    }
+
+    // 7. localStorage cross-tab event test
+    window.addEventListener('storage', (e) => {
+      log(`STORAGE EVENT DETECTED: key=${e.key}, newValue=${e.newValue}`);
+      const st = document.getElementById('storageStatus');
+      if (st) st.textContent = `DETECTED: Storage write event received (key=${e.key})`;
+    });
+
+    function triggerStorageWrite() {
+      const testVal = 'val_' + Date.now();
+      log(`Writing to localStorage: test_tab_key = ${testVal}`);
+      localStorage.setItem('test_tab_key', testVal);
+    }
+
+    // 8. BroadcastChannel test
+    let testBc = null;
+    try {
+      testBc = new BroadcastChannel('proctor_test');
+      testBc.onmessage = (e) => {
+        log(`BROADCASTCHANNEL MESSAGE RECEIVED: ${JSON.stringify(e.data)}`);
+        const bcSt = document.getElementById('bcStatus');
+        if (bcSt) bcSt.textContent = `RECEIVED: BroadcastChannel msg = ${JSON.stringify(e.data)}`;
+      };
+    } catch (e) {
+      log(`BroadcastChannel init error: ${e.message}`);
+    }
+
+    function testBroadcastChannel() {
+      if (!testBc) testBc = new BroadcastChannel('proctor_test');
+      const payload = { type: 'TAB_HEARTBEAT', time: Date.now(), tabId: 'tab_' + Math.floor(Math.random() * 1000) };
+      log(`Sending BroadcastChannel message: ${JSON.stringify(payload)}`);
+      testBc.postMessage(payload);
+    }
+
+    // 9. SharedWorker test setup
+    const workerScript = `
+      let connectedTabs = 0;
+      onconnect = function(e) {
+        connectedTabs++;
+        const port = e.ports[0];
+        port.onmessage = function(evt) {
+          port.postMessage({
+            type: 'TAB_COUNT_RESPONSE',
+            tabCount: connectedTabs,
+            isMultiTab: connectedTabs > 1,
+            activeTabs: connectedTabs,
+            status: 'ok'
+          });
+        };
+        port.start();
+      };
+    `;
+    let sharedWorkerUrl = null;
+    try {
+      const blob = new Blob([workerScript], { type: 'application/javascript' });
+      sharedWorkerUrl = URL.createObjectURL(blob);
+    } catch (e) {}
+
+    function testSharedWorker() {
+      const swSt = document.getElementById('swStatus');
+      if (swSt) swSt.textContent = 'Querying SharedWorker...';
+      try {
+        const sw = new SharedWorker(sharedWorkerUrl || 'shared_worker.js');
+        sw.port.onmessage = (e) => {
+          log(`SHAREDWORKER RESPONSE: ${JSON.stringify(e.data)}`);
+          if (swSt) swSt.textContent = `RESPONSE: tabCount=${e.data.tabCount}, isMultiTab=${e.data.isMultiTab}`;
+        };
+        sw.port.postMessage({ type: 'GET_TAB_COUNT' });
+      } catch (e) {
+        log(`SharedWorker error: ${e.message}`);
+        if (swSt) swSt.textContent = `ERROR: ${e.message}`;
+      }
+    }
+
+    setInterval(updateStats, 500);
+    updateStats();
+  </script>
+</body>
+</html>

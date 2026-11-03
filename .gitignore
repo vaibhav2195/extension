@@ -1,0 +1,14 @@
+# Local debug output
+logs
+
+# Extension packaging artifacts (never commit the .pem signing key)
+*.crx
+*.pem
+*.zip
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
